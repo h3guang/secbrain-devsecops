@@ -1,0 +1,71 @@
+name: Security Scan Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ====== 第一步：用 Semgrep 做轻量级扫描 ======
+      - name: 运行 Semgrep 安全扫描
+        id: semgrep
+        continue-on-error: true
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/security-audit  # 使用 Semgrep 的安全规则集
+
+      # ====== 第二步：用 PMD 做 Java 静态分析 ======
+      - name: 运行 PMD 静态分析
+        id: pmd
+        continue-on-error: true
+        run: |
+          wget -q https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-dist-7.0.0-bin.zip
+          unzip -q pmd-dist-7.0.0-bin.zip
+          ./pmd-bin-7.0.0/bin/run.sh pmd -d demo/sample-code/ -f text -R category/java/security.xml > pmd-results.txt || true
+          echo "PMD 扫描完成"
+          cat pmd-results.txt
+
+      # ====== 第三步：模拟 AI 决策引擎（调用我们后面要写的服务） ======
+      - name: 调用 AI 决策引擎（模拟）
+        id: ai-decision
+        run: |
+          echo "🤖 AI 决策引擎分析结果："
+          echo "  发现 3 个安全问题："
+          echo "  - [P0] SQL注入漏洞 (UserController.java:12) - 建议：使用预编译语句"
+          echo "  - [P1] 硬编码密钥 (UserController.java:23) - 建议：使用环境变量或密钥管理服务"
+          echo "  - [P2] 日志注入风险 (UserController.java:33) - 建议：过滤用户输入中的特殊字符"
+          echo ""
+          echo "📊 风险分级：P0=1个(阻断)  P1=1个(建议修复)  P2=1个(仅记录)"
+
+      # ====== 第四步：生成报告 ======
+      - name: 生成安全报告
+        run: |
+          echo "# 安全扫描报告" > security-report.md
+          echo "扫描时间: $(date)" >> security-report.md
+          echo "扫描文件: demo/sample-code/UserController.java" >> security-report.md
+          echo "" >> security-report.md
+          echo "## 发现的问题" >> security-report.md
+          echo "| 等级 | 类型 | 位置 | 建议 |" >> security-report.md
+          echo "|------|------|------|------|" >> security-report.md
+          echo "| P0 | SQL注入 | UserController.java:12 | 使用预编译语句 |" >> security-report.md
+          echo "| P1 | 硬编码密钥 | UserController.java:23 | 使用环境变量 |" >> security-report.md
+          echo "| P2 | 日志注入 | UserController.java:33 | 过滤特殊字符 |" >> security-report.md
+
+      - name: 上传报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.md
